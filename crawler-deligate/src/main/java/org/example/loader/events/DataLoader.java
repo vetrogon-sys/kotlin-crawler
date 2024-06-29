@@ -6,6 +6,6 @@ public interface DataLoader {
 
     void shutDown();
 
-    void runTask();
+    boolean runTask();
 
 }

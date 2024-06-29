@@ -4,6 +4,7 @@ import org.example.loader.Link;
 import org.example.loader.Loader;
 import org.example.loader.events.SuccessEvent;
 import org.slf4j.Logger;
+import org.slf4j.MDC;
 
 import java.util.concurrent.TimeUnit;
 
@@ -14,8 +15,8 @@ public abstract class DataCrawler implements Runnable {
     private long startScanTime;
     private final Loader loader;
 
-    public DataCrawler() {
-        loader = new Loader();
+    public DataCrawler(Loader loader) {
+        this.loader = loader;
     }
 
     protected abstract void handleSuccessStart(SuccessEvent successEvent);
@@ -28,6 +29,10 @@ public abstract class DataCrawler implements Runnable {
     public void onComplete() {
         loader.shutDown();
         log.info("End scan, running time {}ms", System.currentTimeMillis() - startScanTime);
+    }
+
+    public boolean isSuitable(String value) {
+        return loader.isSuitable(value);
     }
 
     public Link createStartLink() {

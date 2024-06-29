@@ -1,5 +1,6 @@
 package org.example.crawler;
 
+import org.example.loader.Loader;
 import org.slf4j.Logger;
 import sun.reflect.ReflectionFactory;
 
@@ -7,6 +8,8 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Parameter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -29,17 +32,10 @@ public final class CrawlerUtils {
     }
 
     public static void runCrawler(Class<? extends DataCrawler> crawlerClass) {
-        Constructor<?>[] declaredConstructors = crawlerClass.getDeclaredConstructors();
-        Constructor<?> crawlerConstructor = null;
-        for (Constructor<?> declaredConstructor : declaredConstructors) {
-            Parameter[] parameters = declaredConstructor.getParameters();
-            if (parameters.length == 0) {
-                crawlerConstructor = declaredConstructor;
-                break;
-            }
-        }
-
-        if (crawlerConstructor == null) {
+        Constructor<?> crawlerConstructor;
+        try {
+            crawlerConstructor = crawlerClass.getDeclaredConstructor(Loader.class);
+        } catch (NoSuchMethodException e) {
             log.error("Cannot find constructor for {}", crawlerClass);
             return;
         }
@@ -52,12 +48,24 @@ public final class CrawlerUtils {
 
         try {
 
+            Loader loader = new Loader(crawlerSettings.pauseRequest(), crawlerSettings.limitRequest());
+            List<CompletableFuture<?>> crawlerFeatures = new ArrayList<>();
+            long maxUnitWorkingTime = 0;
             for (int i = 0; i < crawlerSettings.unitCount(); i++) {
-                DataCrawler crawler = (DataCrawler) crawlerConstructor.newInstance();
+                DataCrawler crawler = (DataCrawler) crawlerConstructor.newInstance(loader);
 
-                CompletableFuture<Void> crawlerFuture = CompletableFuture.runAsync(crawler, crawlerExecutor);
+                crawlerFeatures.add(CompletableFuture.runAsync(crawler, crawlerExecutor));
 
-                crawlerFuture.get(crawler.maxUnitWorkingTime(), TimeUnit.MILLISECONDS);
+                if (maxUnitWorkingTime == 0) {
+                    maxUnitWorkingTime = crawler.maxUnitWorkingTime();
+                }
+            }
+
+            if (maxUnitWorkingTime == 0) {
+                maxUnitWorkingTime = TimeUnit.MINUTES.toMillis(5);
+            }
+            for (CompletableFuture<?> crawlerFuture : crawlerFeatures) {
+                crawlerFuture.get(maxUnitWorkingTime, TimeUnit.MILLISECONDS);
             }
 
         } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {

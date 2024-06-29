@@ -23,12 +23,10 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
@@ -45,17 +43,24 @@ public class Loader implements DataLoader {
     private final Executor loaderExecutor;
     private final ScheduledExecutorService taskExecutor;
 
+    private final long pauseRequests;
+    private final int limitRequest;
+
     private final BlockingQueue<LoaderTask> taskQueue = new PriorityBlockingQueue<>();
 
     private final Map<String, HttpCookie> cookies;
 
+    private final Set<String> notSuitableValues = ConcurrentHashMap.newKeySet();
+
     @Getter
     private final AtomicLong lastMessageTime = new AtomicLong();
 
-    public Loader() {
-        this.loaderExecutor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("loader-task", 0).factory());
+    public Loader(long pauseRequest, int limitRequest) {
+        this.loaderExecutor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("loader-", 0).factory());
         this.taskExecutor = Executors.newScheduledThreadPool(1, Thread.ofVirtual().name("loader-checker", 0).factory());
         cookies = new ConcurrentHashMap<>();
+        this.pauseRequests = pauseRequest == 0L ? 1L : pauseRequest;
+        this.limitRequest = limitRequest;
     }
 
     public LoaderTask addTask(Link link) {
@@ -64,9 +69,16 @@ public class Loader implements DataLoader {
         return event;
     }
 
+    public boolean isSuitable(String value) {
+        if (notSuitableValues.contains(value)) {
+            return false;
+        }
+        return notSuitableValues.add(value);
+    }
+
     @Override
     public void startUp() {
-        taskExecutor.scheduleWithFixedDelay(this::runTask, 50L, 50L, TimeUnit.MILLISECONDS);
+        taskExecutor.scheduleWithFixedDelay(this::runTaskGroup, 500L, pauseRequests, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -78,8 +90,16 @@ public class Loader implements DataLoader {
         return !taskQueue.isEmpty() || !taskExecutor.isShutdown();
     }
 
+    public void runTaskGroup() {
+        for (int i = 0; i < limitRequest; i++) {
+            if (!runTask()) {
+                break;
+            }
+        }
+    }
+
     @Override
-    public void runTask() {
+    public boolean runTask() {
         LoaderTask loaderTask = taskQueue.poll();
         if (loaderTask == null) {
             long lastMessage = lastMessageTime.get();
@@ -87,11 +107,12 @@ public class Loader implements DataLoader {
                 log.info("Stopping execution cause no more tasks");
                 shutDown();
             }
-            return;
+            return false;
         }
         lastMessageTime.set(System.currentTimeMillis());
         Link link = loaderTask.getLink();
         initLoader(link);
+
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -130,11 +151,12 @@ public class Loader implements DataLoader {
                     loaderTask.complete(successEvent);
                 }
 
-
             } catch (IOException | URISyntaxException e) {
                 loaderTask.complete(new FailEvent(this, link, e.getMessage(), e));
             }
         }, loaderExecutor);
+
+        return true;
     }
 
 

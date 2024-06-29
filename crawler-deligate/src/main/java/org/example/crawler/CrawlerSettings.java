@@ -8,4 +8,7 @@ public @interface CrawlerSettings {
 
     int unitCount() default 1;
 
+    long pauseRequest() default 0L;
+
+    int limitRequest() default 1;
 }

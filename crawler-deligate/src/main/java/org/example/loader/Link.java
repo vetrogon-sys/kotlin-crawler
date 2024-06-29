@@ -10,6 +10,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 @Getter
 public class Link {
@@ -39,6 +40,36 @@ public class Link {
     public Link addParameter(String key, String value) {
         parameters.put(key, value);
         return this;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Link link)) {
+            return false;
+        }
+
+        if (!Objects.equals(url, link.url)) {
+            return false;
+        }
+        if (!parameters.equals(link.parameters)) {
+            return false;
+        }
+        if (!Objects.equals(body, link.body)) {
+            return false;
+        }
+        return method == link.method;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = url != null ? url.hashCode() : 0;
+        result = 31 * result + parameters.hashCode();
+        result = 31 * result + (body != null ? body.hashCode() : 0);
+        result = 31 * result + (method != null ? method.hashCode() : 0);
+        return result;
     }
 
     public String getMethod() {
