@@ -9,11 +9,11 @@ import org.jsoup.nodes.Document;
 
 public abstract class LoaderEvent {
 
-    protected final Loader loader;
+    protected final DataLoader loader;
     protected final Link link;
     protected final String content;
 
-    protected LoaderEvent(Loader loader, Link link, String content) {
+    protected LoaderEvent(DataLoader loader, Link link, String content) {
         this.loader = loader;
         this.content = content;
         this.link = link;
@@ -23,7 +23,7 @@ public abstract class LoaderEvent {
         return loader.addTask(link);
     }
 
-    public Loader loader() {
+    public DataLoader loader() {
         return loader;
     }
 

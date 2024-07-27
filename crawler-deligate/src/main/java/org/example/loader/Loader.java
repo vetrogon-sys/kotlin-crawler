@@ -1,14 +1,10 @@
 package org.example.loader;
 
-import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
-import org.example.loader.events.DataLoader;
+import org.example.loader.events.AbstractDataLoader;
 import org.example.loader.events.FailEvent;
 import org.example.loader.events.LoaderTask;
 import org.example.loader.events.SuccessEvent;
-import org.example.loader.exceptions.AuthorizedException;
-import org.example.loader.exceptions.ForbiddenException;
-import org.example.loader.exceptions.NotFoundException;
 import org.example.model.ModelConstants;
 import org.slf4j.Logger;
 
@@ -22,97 +18,22 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.slf4j.LoggerFactory.getLogger;
 
-public class Loader implements DataLoader {
-    public static final long MAX_WAITING_TIME = TimeUnit.SECONDS.toMillis(5);
+public class Loader extends AbstractDataLoader {
     private static final Logger log = getLogger(Loader.class);
 
-    private final Executor loaderExecutor;
-    private final ScheduledExecutorService taskExecutor;
-
-    private final long pauseRequests;
-    private final int limitRequest;
-
-    private final BlockingQueue<LoaderTask> taskQueue = new PriorityBlockingQueue<>();
-
-    private final Map<String, HttpCookie> cookies;
-
-    private final Set<String> notSuitableValues = ConcurrentHashMap.newKeySet();
-
-    @Getter
-    private final AtomicLong lastMessageTime = new AtomicLong();
 
     public Loader(long pauseRequest, int limitRequest) {
-        this.loaderExecutor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("loader-", 0).factory());
-        this.taskExecutor = Executors.newScheduledThreadPool(1, Thread.ofVirtual().name("loader-checker", 0).factory());
-        cookies = new ConcurrentHashMap<>();
-        this.pauseRequests = pauseRequest == 0L ? 1L : pauseRequest;
-        this.limitRequest = limitRequest;
-    }
-
-    public LoaderTask addTask(Link link) {
-        LoaderTask event = new LoaderTask(link);
-        taskQueue.add(event);
-        return event;
-    }
-
-    public boolean isSuitable(String value) {
-        if (notSuitableValues.contains(value)) {
-            return false;
-        }
-        return notSuitableValues.add(value);
+        super(pauseRequest, limitRequest);
     }
 
     @Override
-    public void startUp() {
-        taskExecutor.scheduleWithFixedDelay(this::runTaskGroup, 500L, pauseRequests, TimeUnit.MILLISECONDS);
-    }
-
-    @Override
-    public void shutDown() {
-        taskExecutor.shutdownNow();
-    }
-
-    public boolean isWorking() {
-        return !taskQueue.isEmpty() || !taskExecutor.isShutdown();
-    }
-
-    public void runTaskGroup() {
-        for (int i = 0; i < limitRequest; i++) {
-            if (!runTask()) {
-                break;
-            }
-        }
-    }
-
-    @Override
-    public boolean runTask() {
-        LoaderTask loaderTask = taskQueue.poll();
-        if (loaderTask == null) {
-            long lastMessage = lastMessageTime.get();
-            if (lastMessage != 0 && lastMessage < System.currentTimeMillis() - MAX_WAITING_TIME) {
-                log.info("Stopping execution cause no more tasks");
-                shutDown();
-            }
-            return false;
-        }
-        lastMessageTime.set(System.currentTimeMillis());
+    public boolean runTask(LoaderTask loaderTask) {
         Link link = loaderTask.getLink();
         initLoader(link);
-
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -131,7 +52,7 @@ public class Loader implements DataLoader {
                     }
                 }
 
-                log.info("[{}] {}", link.getMethod(), link.buildUrl());
+                logLink(link);
                 int responseCode = urlConnection.getResponseCode();
                 if (is2xxCode(responseCode)) {
                     handleConnection(urlConnection);
@@ -159,21 +80,7 @@ public class Loader implements DataLoader {
         return true;
     }
 
-
-    private void initLoader(Link link) {
-        link.getCookies().values()
-              .forEach(cookie -> cookies.put(cookie.key(), new HttpCookie(cookie.key(), cookie.value())));
-    }
-
-    private void initConnection(HttpURLConnection urlConnection, Link link) {
-        String cookies = getCookieString();
-        if (StringUtils.isNoneBlank(cookies)) {
-            urlConnection.setRequestProperty(ModelConstants.COOKIE_HEADER, cookies);
-        }
-        link.getHeaders().forEach(urlConnection::setRequestProperty);
-    }
-
-    private void handleConnection(HttpURLConnection connection) {
+    protected void handleConnection(HttpURLConnection connection) {
         connection.getHeaderFields().forEach((s, values) -> {
             if (StringUtils.equalsIgnoreCase(s, ModelConstants.SET_COOKIE_HEADER)) {
                 for (String cookieString : values) {
@@ -189,26 +96,4 @@ public class Loader implements DataLoader {
         });
     }
 
-    private String getCookieString() {
-        StringBuilder cookieString = new StringBuilder();
-        cookies.values()
-              .forEach(cookie -> cookieString.append(cookie.getName()).append("=").append(cookie.getValue()).append(';'));
-        return cookieString.toString();
-    }
-
-    private static boolean is2xxCode(int responseCode) {
-        return responseCode / 100 == 2;
-    }
-
-    private static boolean is4xxCode(int responseCode) {
-        return responseCode / 100 == 4;
-    }
-
-    private Throwable getExceptionForStatus(int statusCode) {
-        return switch (statusCode) {
-            case 403 -> new ForbiddenException();
-            case 401 -> new AuthorizedException();
-            default -> new NotFoundException();
-        };
-    }
 }

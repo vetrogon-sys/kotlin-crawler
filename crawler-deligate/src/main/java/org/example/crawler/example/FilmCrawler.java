@@ -6,6 +6,7 @@ import org.example.crawler.CrawlerUtils;
 import org.example.crawler.DataCrawler;
 import org.example.loader.Link;
 import org.example.loader.Loader;
+import org.example.loader.events.DataLoader;
 import org.example.loader.events.SuccessEvent;
 import org.slf4j.Logger;
 
@@ -15,7 +16,7 @@ import static org.slf4j.LoggerFactory.getLogger;
 public class FilmCrawler extends DataCrawler {
     private static final Logger log = getLogger(FilmCrawler.class);
 
-    public FilmCrawler(Loader loader) {
+    public FilmCrawler(DataLoader loader) {
         super(loader);
     }
 
@@ -35,8 +36,7 @@ public class FilmCrawler extends DataCrawler {
                   .build();
 
             filmSe.addTask(link)
-                  .onSuccess(se -> se.addTask(new Link.Builder("https://jsonplaceholder.typicode.com/posts/"
-                              + se.json().at("/id").asText()).build())
+                  .onSuccess(se -> se.addTask(new Link.Builder("https://jsonplaceholder.typicode.com/posts/" + se.json().at("/id").asText()).build())
                         .onSuccess(se1 -> log.info(se1.json().at("/title").asText()))
                   );
         }

@@ -2,10 +2,15 @@ package org.example.crawler;
 
 import org.example.loader.Link;
 import org.example.loader.Loader;
+import org.example.loader.events.DataLoader;
+import org.example.loader.events.LoaderTask;
 import org.example.loader.events.SuccessEvent;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 
+import java.time.Duration;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.slf4j.LoggerFactory.getLogger;
@@ -13,9 +18,9 @@ import static org.slf4j.LoggerFactory.getLogger;
 public abstract class DataCrawler implements Runnable {
     private static final Logger log = getLogger(DataCrawler.class);
     private long startScanTime;
-    private final Loader loader;
+    private final DataLoader loader;
 
-    public DataCrawler(Loader loader) {
+    public DataCrawler(DataLoader loader) {
         this.loader = loader;
     }
 
@@ -23,12 +28,12 @@ public abstract class DataCrawler implements Runnable {
 
     public void beforeStart() {
         startScanTime = System.currentTimeMillis();
-        log.info("Start scanning data {}", startScanTime);
+        log.info("Start scanning time {}", startScanTime);
     }
 
     public void onComplete() {
         loader.shutDown();
-        log.info("End scan, running time {}ms", System.currentTimeMillis() - startScanTime);
+        log.info("End scan, running time {}s", (System.currentTimeMillis() - startScanTime) / 1000.0);
     }
 
     public boolean isSuitable(String value) {
@@ -49,7 +54,7 @@ public abstract class DataCrawler implements Runnable {
         loader.startUp();
 
         while (true) {
-            if (!loader.isWorking()) {
+            if (!loader.isDone()) {
                 break;
             }
         }
